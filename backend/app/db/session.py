@@ -1,17 +1,19 @@
 """
-Database session management with async support.
-Handles connection pooling and session lifecycle.
+Database session management with async and sync support.
+Handles connection pooling and session lifecycle for both paradigms.
 """
 
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from contextlib import asynccontextmanager, contextmanager
+from typing import AsyncGenerator, Generator
 
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
@@ -19,6 +21,10 @@ from app.core.logging import get_logger
 
 settings = get_settings()
 logger = get_logger(__name__)
+
+# ============================================================
+# Async Engine & Sessions (for FastAPI endpoints)
+# ============================================================
 
 # Create async engine with connection pooling
 engine: AsyncEngine = create_async_engine(
@@ -51,11 +57,12 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     Usage:
         async with get_async_session() as session:
             # Use session here
-            pass
+            result = await session.execute(select(User))
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -63,8 +70,96 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency to get async database session.
+    
+    Usage in FastAPI routes:
+        @app.get("/users")
+        async def get_users(db: AsyncSession = Depends(get_db)):
+            result = await db.execute(select(User))
+            return result.scalars().all()
+    """
+    async with get_async_session() as session:
+        yield session
+
+
+# ============================================================
+# Sync Engine & Sessions (for Celery workers and scripts)
+# ============================================================
+
+# Convert async DATABASE_URL to sync version for synchronous operations
+# Only create sync engine if DATABASE_URL is available
+try:
+    sync_database_url = settings.DATABASE_URL.replace(
+        "postgresql+asyncpg://", "postgresql+psycopg2://"
+    )
+
+    # Create sync engine
+    sync_engine = create_engine(
+        sync_database_url,
+        echo=settings.DEBUG,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        max_overflow=10,
+        pool_size=5,
+        poolclass=NullPool if settings.APP_ENV == "test" else None,
+    )
+
+    # Create sync session factory
+    SyncSessionLocal = sessionmaker(
+        bind=sync_engine,
+        autocommit=False,
+        autoflush=True,
+        expire_on_commit=False,
+    )
+except Exception as e:
+    logger.warning(f"Could not create sync engine: {e}")
+    sync_engine = None
+    SyncSessionLocal = None
+
+
+@contextmanager
+def get_sync_session() -> Generator[Session, None, None]:
+    """
+    Get sync database session with automatic cleanup.
+    
+    Usage:
+        with get_sync_session() as session:
+            # Use session here
+            users = session.query(User).all()
+    """
+    session = SyncSessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def get_sync_db() -> Generator[Session, None, None]:
+    """
+    Get sync database session (for Celery tasks).
+    
+    Usage in Celery tasks:
+        @celery_app.task
+        def process_data():
+            with get_sync_db() as db:
+                users = db.query(User).all()
+    """
+    with get_sync_session() as session:
+        yield session
+
+
+# ============================================================
+# Database Utilities
+# ============================================================
+
 async def create_tables():
-    """Create all database tables."""
+    """Create all database tables (async)."""
     from app.db.base import Base
     
     logger.info("Creating database tables")
@@ -74,7 +169,7 @@ async def create_tables():
 
 
 async def drop_tables():
-    """Drop all database tables."""
+    """Drop all database tables (async)."""
     from app.db.base import Base
     
     logger.warning("Dropping all database tables")
@@ -83,9 +178,27 @@ async def drop_tables():
     logger.warning("Database tables dropped")
 
 
+def create_tables_sync():
+    """Create all database tables (sync)."""
+    from app.db.base import Base
+    
+    logger.info("Creating database tables (sync)")
+    Base.metadata.create_all(bind=sync_engine)
+    logger.info("Database tables created successfully")
+
+
+def drop_tables_sync():
+    """Drop all database tables (sync)."""
+    from app.db.base import Base
+    
+    logger.warning("Dropping all database tables (sync)")
+    Base.metadata.drop_all(bind=sync_engine)
+    logger.warning("Database tables dropped")
+
+
 async def check_database_connection() -> bool:
     """
-    Check if database connection is working.
+    Check if async database connection is working.
     
     Returns:
         bool: True if connection is working, False otherwise
@@ -93,16 +206,33 @@ async def check_database_connection() -> bool:
     try:
         async with engine.begin() as conn:
             await conn.execute("SELECT 1")
-        logger.info("Database connection successful")
+        logger.info("Async database connection successful")
         return True
     except Exception as e:
-        logger.error(f"Database connection failed: {e}")
+        logger.error(f"Async database connection failed: {e}")
+        return False
+
+
+def check_database_connection_sync() -> bool:
+    """
+    Check if sync database connection is working.
+    
+    Returns:
+        bool: True if connection is working, False otherwise
+    """
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute("SELECT 1")
+        logger.info("Sync database connection successful")
+        return True
+    except Exception as e:
+        logger.error(f"Sync database connection failed: {e}")
         return False
 
 
 async def get_database_info() -> dict:
     """
-    Get database information for health checks.
+    Get database information for health checks (async).
     
     Returns:
         dict: Database connection information
@@ -132,15 +262,3 @@ async def get_database_info() -> dict:
             "status": "error",
             "error": str(e)
         }
-
-
-# For backward compatibility and FastAPI dependency injection
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    FastAPI dependency to get database session.
-    
-    This is a wrapper around get_async_session for use with FastAPI's
-    dependency injection system.
-    """
-    async with get_async_session() as session:
-        yield session 

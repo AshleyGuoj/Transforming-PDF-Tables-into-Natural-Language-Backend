@@ -1,0 +1,7 @@
+{
+  "/console/project/page": "app/console/project/page.js",
+  "/login/page": "app/login/page.js",
+  "/console/org/page": "app/console/org/page.js",
+  "/export/page": "app/export/page.js",
+  "/qa/page": "app/qa/page.js"
+}

@@ -6,15 +6,14 @@ Handles file upload, table extraction, and parse status tracking.
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File as FastAPIFile, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, get_current_user, require_annotator
 from app.core.logging import get_logger
-from app.db.models.files import PDFFile, ParsedTable, FileStatus
-from app.db.models.projects import Project
+from app.db.models import File as FileModel, FileTable, FileStatus, Project
 from app.security.auth_stub import JWTPayload
 
 logger = get_logger(__name__)
@@ -59,7 +58,7 @@ class TableSummary(BaseModel):
 @router.post("/parse", response_model=ParseResponse)
 async def upload_and_parse_pdf(
     project_id: str = Form(..., description="Project ID to upload file to"),
-    file: UploadFile = File(..., description="PDF file to process"),
+    file: UploadFile = FastAPIFile(..., description="PDF file to process"),
     current_user: JWTPayload = Depends(require_annotator),
     db: AsyncSession = Depends(get_db)
 ):

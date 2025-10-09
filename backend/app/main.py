@@ -13,7 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.v1 import routes_parse, routes_tasks, routes_drafts, routes_export
+# Import new refactored routes
+from app.api.v1 import (
+    routes_projects,
+    routes_files,
+    routes_parse_azure,
+    routes_tasks_new,
+    routes_export_new
+)
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.db.session import engine
@@ -56,13 +63,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
+# Configure CORS for Frontend Integration
+# Allows React frontend (localhost:3000) to access backend API (localhost:8000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_HOSTS,
+    allow_origins=settings.ALLOWED_HOSTS,  # Configured in .env: ["http://localhost:3000", "http://localhost:8000"]
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all custom headers
 )
 
 
@@ -119,27 +127,33 @@ async def readiness_check():
         )
 
 
-# Include API routes
+# Register API routes (refactored)
 app.include_router(
-    routes_parse.router,
+    routes_projects.router,
+    prefix="/api/v1",
+    tags=["Projects"]
+)
+
+app.include_router(
+    routes_files.router,
+    prefix="/api/v1",
+    tags=["Files"]
+)
+
+app.include_router(
+    routes_parse_azure.router,
     prefix="/api/v1",
     tags=["Parse"]
 )
 
 app.include_router(
-    routes_tasks.router,
+    routes_tasks_new.router,
     prefix="/api/v1",
     tags=["Tasks"]
 )
 
 app.include_router(
-    routes_drafts.router,
-    prefix="/api/v1",
-    tags=["Drafts"]
-)
-
-app.include_router(
-    routes_export.router,
+    routes_export_new.router,
     prefix="/api/v1",
     tags=["Export"]
 )

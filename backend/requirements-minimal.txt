@@ -1,0 +1,32 @@
+# GrandScale Backend - Minimal Dependencies
+# Only core dependencies required to run the backend
+# Generated: 2025-10-09
+
+# Core Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database & ORM
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+greenlet==3.0.1
+
+# Data Validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# Configuration & Logging
+python-dotenv==1.0.0
+structlog==23.2.0
+python-json-logger==2.0.7
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP Client
+httpx==0.25.2
+
