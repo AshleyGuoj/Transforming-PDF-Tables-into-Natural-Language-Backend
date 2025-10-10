@@ -22,14 +22,20 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class JWTPayload(BaseModel):
     """JWT token payload structure."""
-    user_id: str
+    user_id: int  # Changed to int to match database
     email: str
-    organization_id: str
+    org_id: int  # Renamed from organization_id and changed to int
     organization_role: str
-    project_id: Optional[str] = None
+    project_id: Optional[int] = None  # Changed to int
     project_role: Optional[str] = None
     exp: datetime
     iat: datetime
+
+    # Backwards compatibility
+    @property
+    def organization_id(self) -> int:
+        """Alias for org_id for backwards compatibility."""
+        return self.org_id
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -43,26 +49,26 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    user_id: str,
+    user_id: int,
     email: str,
-    organization_id: str,
+    org_id: int,
     organization_role: str,
-    project_id: Optional[str] = None,
+    project_id: Optional[int] = None,
     project_role: Optional[str] = None,
     expires_delta: Optional[timedelta] = None
 ) -> str:
     """
     Create a JWT access token.
-    
+
     Args:
-        user_id: User UUID
+        user_id: User ID (integer)
         email: User email
-        organization_id: Organization UUID
+        org_id: Organization ID (integer)
         organization_role: User role in organization
-        project_id: Optional project UUID
+        project_id: Optional project ID (integer)
         project_role: Optional user role in project
         expires_delta: Optional token expiration time
-        
+
     Returns:
         str: Encoded JWT token
     """
@@ -72,46 +78,46 @@ def create_access_token(
         expire = datetime.utcnow() + timedelta(
             minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    
+
     issued_at = datetime.utcnow()
-    
+
     payload = {
         "user_id": user_id,
         "email": email,
-        "organization_id": organization_id,
+        "org_id": org_id,
         "organization_role": organization_role,
         "project_id": project_id,
         "project_role": project_role,
         "exp": expire,
         "iat": issued_at,
     }
-    
+
     # Remove None values
     payload = {k: v for k, v in payload.items() if v is not None}
-    
+
     encoded_jwt = jwt.encode(
-        payload, 
-        settings.JWT_SECRET_KEY, 
+        payload,
+        settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM
     )
-    
+
     logger.info(
         "JWT token created",
         user_id=user_id,
-        organization_id=organization_id,
+        org_id=org_id,
         expires_at=expire.isoformat()
     )
-    
+
     return encoded_jwt
 
 
 def decode_jwt_token(token: str) -> Optional[JWTPayload]:
     """
     Decode and verify a JWT token.
-    
+
     Args:
         token: JWT token string
-        
+
     Returns:
         JWTPayload: Decoded token payload or None if invalid
     """
@@ -121,34 +127,34 @@ def decode_jwt_token(token: str) -> Optional[JWTPayload]:
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM]
         )
-        
+
         # Validate required fields
-        required_fields = ["user_id", "email", "organization_id", "organization_role", "exp", "iat"]
+        required_fields = ["user_id", "email", "org_id", "organization_role", "exp", "iat"]
         for field in required_fields:
             if field not in payload:
                 logger.warning(f"Missing required field in JWT: {field}")
                 return None
-        
+
         # Convert timestamps
         exp = datetime.fromtimestamp(payload["exp"])
         iat = datetime.fromtimestamp(payload["iat"])
-        
+
         # Check expiration
         if datetime.utcnow() > exp:
             logger.warning("JWT token expired")
             return None
-        
+
         return JWTPayload(
             user_id=payload["user_id"],
             email=payload["email"],
-            organization_id=payload["organization_id"],
+            org_id=payload["org_id"],
             organization_role=payload["organization_role"],
             project_id=payload.get("project_id"),
             project_role=payload.get("project_role"),
             exp=exp,
             iat=iat
         )
-        
+
     except JWTError as e:
         logger.warning(f"JWT decode error: {e}")
         return None
@@ -158,23 +164,23 @@ def decode_jwt_token(token: str) -> Optional[JWTPayload]:
 
 
 def create_dev_token(
-    user_id: str = "dev-user-123",
+    user_id: int = 1,
     email: str = "dev@example.com",
-    organization_id: str = "dev-org-123",
+    org_id: int = 1,
     organization_role: str = "admin",
-    project_id: Optional[str] = "dev-project-123",
+    project_id: Optional[int] = 1,
     project_role: Optional[str] = "admin"
 ) -> str:
     """
     Create a development JWT token for testing.
-    
+
     This is a convenience function for development and testing.
     In production, tokens should be created through proper authentication flow.
     """
     return create_access_token(
         user_id=user_id,
         email=email,
-        organization_id=organization_id,
+        org_id=org_id,
         organization_role=organization_role,
         project_id=project_id,
         project_role=project_role
@@ -183,21 +189,25 @@ def create_dev_token(
 
 # Development helper functions
 def get_dev_admin_token() -> str:
-    """Get a development admin token."""
-    return create_dev_token(
-        user_id="admin-user-123",
+    """Get a development admin token with 24h expiration."""
+    from datetime import timedelta
+    return create_access_token(
+        user_id=1,
         email="admin@guideline-transform.com",
-        organization_id="demo-org-123",
-        organization_role="admin"
+        org_id=1,
+        organization_role="admin",
+        project_id=1,
+        project_role="admin",
+        expires_delta=timedelta(hours=24)  # 24 hour expiration for dev
     )
 
 
 def get_dev_annotator_token() -> str:
     """Get a development annotator token."""
     return create_dev_token(
-        user_id="annotator-user-123",
+        user_id=2,
         email="annotator@guideline-transform.com",
-        organization_id="demo-org-123",
+        org_id=1,
         organization_role="annotator"
     )
 
@@ -205,8 +215,8 @@ def get_dev_annotator_token() -> str:
 def get_dev_qa_token() -> str:
     """Get a development QA token."""
     return create_dev_token(
-        user_id="qa-user-123",
+        user_id=3,
         email="qa@guideline-transform.com",
-        organization_id="demo-org-123",
+        org_id=1,
         organization_role="qa"
     ) 

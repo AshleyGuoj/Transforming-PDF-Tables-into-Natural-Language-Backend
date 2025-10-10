@@ -95,7 +95,7 @@ async def create_annotation_task(
     # Placeholder implementation
     new_job = AnnotationJob(
         project_id=1,  # TODO: Get from file
-        status=AnnotationJobStatus.pending,
+        status=AnnotationJobStatus.not_started,
         created_by=current_user.user_id
     )
     db.add(new_job)
@@ -137,25 +137,40 @@ async def bulk_create_tasks(
         TaskListResponse with all created tasks
     """
     logger.info(f"Bulk creating tasks for file {request.file_id}")
-    
-    # Get all tables for the file
+
+    # Get all tables for the file and verify file exists
     tables_query = select(FileTable).where(FileTable.file_id == request.file_id)
     result = await db.execute(tables_query)
     tables = result.scalars().all()
-    
+
     if not tables:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No tables found for this file"
         )
-    
+
+    # Get file to obtain project_id
+    from GrandscaleDB.models import File
+    file_query = select(File).where(File.file_id == request.file_id)
+    file_result = await db.execute(file_query)
+    file_obj = file_result.scalar_one_or_none()
+
+    if not file_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    project_id = file_obj.project_id
+    logger.info(f"Creating tasks for file {request.file_id} in project {project_id}")
+
     # Create tasks
     created_tasks = []
     for table in tables:
         job = AnnotationJob(
-            project_id=1,  # TODO: Get from file
-            status=AnnotationJobStatus.pending,
-            created_by=current_user.user_id
+            project_id=project_id,
+            table_id=table.table_id,
+            status=AnnotationJobStatus.not_started
         )
         db.add(job)
         await db.flush()
@@ -165,8 +180,7 @@ async def bulk_create_tasks(
             assignment = Assignment(
                 job_id=job.job_id,
                 user_id=request.assigned_to,
-                role=AssignmentRole.annotator,
-                assigned_by=current_user.user_id
+                role=AssignmentRole.annotator
             )
             db.add(assignment)
         

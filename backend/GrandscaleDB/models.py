@@ -130,8 +130,9 @@ class Project(Base):
     status = Column(Enum(ProjectStatus, name="project_status_enum"), default=ProjectStatus.draft)
     is_active = Column(Boolean, default=True, nullable=False)
 
-    date_created = Column(DateTime, default=func.now(), nullable=False)
-    date_updated = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    # Fixed column names to match database schema
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     completed_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
 
@@ -170,8 +171,9 @@ class File(Base):
     status = Column(Enum(FileStatus, name="file_status_enum"), default=FileStatus.pending, nullable=False)
     file_type = Column(Enum(FileType, name="file_type_enum"), default=FileType.dataset, nullable=False)
 
-    date_created = Column(DateTime, default=func.now(), nullable=False)
-    date_updated = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    # Fixed column names to match database schema
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
 
@@ -252,11 +254,12 @@ class User(Base):
     client_projects = relationship("Project", back_populates="client_pm")
     managed_projects = relationship("Project", back_populates="our_pm")
 
-    previous_jobs = relationship(
-        "AnnotationJob",
-        secondary="job_previous_annotators",
-        back_populates="previous_annotators"
-    )
+    # TODO: Fix job_previous_annotators relationship - currently causing SQLAlchemy errors
+    # previous_jobs = relationship(
+    #     "AnnotationJob",
+    #     secondary=job_previous_annotators,
+    #     back_populates="previous_annotators"
+    # )
 
     reviews = relationship("Review", back_populates="reviewer")
 
@@ -291,12 +294,14 @@ class AnnotationJob(Base):
 
     reviews = relationship("Review", back_populates="job", cascade="all, delete-orphan")
     assignments = relationship("Assignment", back_populates="job", cascade="all, delete-orphan")
+    events = relationship("EventLog", back_populates="job")
 
-    previous_annotators = relationship(
-        "User",
-        secondary="job_previous_annotators",
-        back_populates="previous_jobs"
-    )
+    # TODO: Fix job_previous_annotators relationship - currently causing SQLAlchemy errors
+    # previous_annotators = relationship(
+    #     "User",
+    #     secondary=job_previous_annotators,
+    #     back_populates="previous_jobs"
+    # )
 
 
 class EventLog(Base):

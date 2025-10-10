@@ -11,15 +11,17 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 # Import new refactored routes
 from app.api.v1 import (
-    routes_projects,
+    routes_projects_simple,  # Using simple routes to bypass ORM issues
     routes_files,
     routes_parse_azure,
     routes_tasks_new,
-    routes_export_new
+    routes_export_new,
+    routes_dev  # Development-only routes
 )
 from app.core.config import get_settings
 from app.core.logging import setup_logging
@@ -39,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Test database connection
     try:
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         logger.info("Database connection established")
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
@@ -72,6 +74,45 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, OPTIONS, etc.)
     allow_headers=["*"],  # Allow all custom headers
 )
+
+
+# Development-only: Bypass JWT Authentication
+# ⚠️ WARNING: This middleware bypasses ALL authentication in development mode!
+# It should NEVER be enabled in production.
+if settings.APP_ENV in ["local", "development", "dev"]:
+    from app.security.auth_stub import JWTPayload
+    from datetime import datetime, timedelta
+
+    @app.middleware("http")
+    async def bypass_auth_middleware(request: Request, call_next):
+        """
+        Development middleware to bypass JWT authentication.
+
+        This creates a fake authenticated user for all requests,
+        allowing testing without authentication.
+
+        ⚠️ ONLY ENABLED IN DEVELOPMENT MODE ⚠️
+        """
+        # Create a fake admin user for all requests
+        fake_user = JWTPayload(
+            user_id=1,
+            email="dev@grandscale.com",
+            org_id=1,
+            organization_role="admin",
+            project_id=1,
+            project_role="admin",
+            exp=datetime.utcnow() + timedelta(hours=24),
+            iat=datetime.utcnow()
+        )
+
+        # Attach the fake user to request state
+        # This makes it available to dependencies via request.state
+        request.state.user = fake_user
+
+        response = await call_next(request)
+        return response
+
+    logger.warning("⚠️ Authentication bypass enabled for development - ALL requests will use admin credentials!")
 
 
 # Global exception handlers
@@ -117,7 +158,7 @@ async def readiness_check():
     """Readiness check with database connectivity."""
     try:
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         return {"status": "ready", "database": "connected"}
     except Exception as e:
         logger.error(f"Readiness check failed: {e}")
@@ -129,7 +170,7 @@ async def readiness_check():
 
 # Register API routes (refactored)
 app.include_router(
-    routes_projects.router,
+    routes_projects_simple.router,
     prefix="/api/v1",
     tags=["Projects"]
 )
@@ -157,6 +198,15 @@ app.include_router(
     prefix="/api/v1",
     tags=["Export"]
 )
+
+# Development-only routes (should be disabled in production)
+if settings.APP_ENV in ["local", "development", "dev"]:
+    app.include_router(
+        routes_dev.router,
+        prefix="/api",
+        tags=["Development"]
+    )
+    logger.warning("⚠️ Development routes enabled - disable in production!")
 
 
 # Root endpoint

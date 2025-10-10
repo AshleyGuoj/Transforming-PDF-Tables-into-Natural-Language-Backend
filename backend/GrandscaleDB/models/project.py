@@ -96,7 +96,7 @@ class File(Base, TimestampMixin):
     # --- Relationships ---
     uploader = relationship("User", back_populates="uploaded_files")
     project = relationship("Project", back_populates="files")
-    versions = relationship("FileVersion", back_populates="file", cascade="all, delete-orphan")
+    versions = relationship("FileVersion", foreign_keys="FileVersion.file_id", back_populates="file", cascade="all, delete-orphan")
     events = relationship("EventLog", back_populates="file")
     active_version = relationship("FileVersion", foreign_keys=[active_version_id], uselist=False)
     tables = relationship("FileTable", back_populates="file", cascade="all, delete-orphan")
@@ -131,7 +131,7 @@ class FileVersion(Base, TimestampMixin):
     llm_params = Column(JSON, nullable=True)
 
     # --- Relationships ---
-    file = relationship("File", back_populates="versions")
+    file = relationship("File", foreign_keys=[file_id], back_populates="versions")
     source_version = relationship("FileVersion", remote_side=[version_id])
     events = relationship("EventLog", back_populates="file_version")
     exports = relationship("ExportLog", secondary="exported_file", back_populates="file_versions")
@@ -158,6 +158,10 @@ class FileTable(Base, TimestampMixin):
     description = Column(Text, nullable=True)
     schema_json = Column(JSONB, nullable=True)
     extracted_narrative = Column(Text, nullable=True)
+
+    # Azure Document Intelligence specific fields
+    page_number = Column(Integer, nullable=True)
+    table_json = Column(JSONB, nullable=True)
 
     status = Column(Enum(FileStatus, name="filetable_status_enum"), default=FileStatus.pending, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)

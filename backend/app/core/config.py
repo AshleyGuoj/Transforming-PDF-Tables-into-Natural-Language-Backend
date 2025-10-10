@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key")
     DEFAULT_LLM_MODEL: str = Field(default="gpt-4o-mini", description="Default LLM model")
     DEFAULT_LLM_PROVIDER: str = Field(default="openai", description="Default LLM provider")
+
+    # Azure Document Intelligence Configuration
+    AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: Optional[str] = Field(
+        default=None,
+        description="Azure Document Intelligence API endpoint"
+    )
+    AZURE_DOCUMENT_INTELLIGENCE_KEY: Optional[str] = Field(
+        default=None,
+        description="Azure Document Intelligence API key"
+    )
     
     # JWT/Auth Configuration
     JWT_SECRET_KEY: str = Field(

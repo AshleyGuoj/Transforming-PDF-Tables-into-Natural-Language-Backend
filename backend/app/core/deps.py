@@ -5,8 +5,8 @@ Provides common dependencies like database sessions, authentication, etc.
 
 from typing import AsyncGenerator, Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -14,7 +14,7 @@ from app.db.session import get_async_session
 from app.security.auth_stub import decode_jwt_token, JWTPayload
 
 settings = get_settings()
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # Don't auto error in dev mode
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -33,41 +33,57 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
-    token: str = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: AsyncSession = Depends(get_db)
 ) -> JWTPayload:
     """
     Dependency to get current authenticated user from JWT token.
-    
+
+    In development mode, uses the fake user from request.state set by bypass_auth_middleware.
+    In production, validates JWT token from Authorization header.
+
     Args:
-        token: JWT token from Authorization header
+        request: FastAPI request object
+        credentials: JWT token from Authorization header (optional in dev mode)
         db: Database session
-        
+
     Returns:
         JWTPayload: Decoded JWT payload with user information
-        
+
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    # Development mode: Use fake user from request.state (set by middleware)
+    if settings.APP_ENV in ["local", "development", "dev"]:
+        # Try to get user from request state (set by bypass_auth_middleware)
+        if hasattr(request.state, 'user'):
+            return request.state.user
+
+    # Production mode: Validate JWT token
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
-        # Extract token from bearer format
-        if hasattr(token, 'credentials'):
-            token_str = token.credentials
-        else:
-            token_str = str(token)
-            
+        # Extract token from credentials
+        token_str = credentials.credentials
+
         # Decode JWT token
         payload = decode_jwt_token(token_str)
-        
+
         if payload is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-            
+
         return payload
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

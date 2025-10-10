@@ -83,11 +83,13 @@ class User(Base, TimestampMixin):
     client_projects = relationship("Project", back_populates="client_pm", foreign_keys="[Project.client_pm_id]")
     managed_projects = relationship("Project", back_populates="our_pm", foreign_keys="[Project.our_pm_id]")
 
-    previous_jobs = relationship(
-        "AnnotationJob",
-        secondary="job_previous_annotators",
-        back_populates="previous_annotators"
-    )
+    # TODO: Fix association table reference - job_previous_annotators not accessible
+    # previous_jobs = relationship(
+    #     "AnnotationJob",
+    #     secondary="job_previous_annotators",
+    #     back_populates="previous_annotators"
+    # )
 
     reviews = relationship("Review", back_populates="reviewer", cascade="all, delete-orphan")
-    roles = relationship("Role", secondary="user_roles", back_populates="users")
+    # TODO: Fix association table reference - user_roles not accessible
+    # roles = relationship("Role", secondary="user_roles", back_populates="users")

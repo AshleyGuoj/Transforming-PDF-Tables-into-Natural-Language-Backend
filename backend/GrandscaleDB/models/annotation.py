@@ -56,11 +56,12 @@ class AnnotationJob(Base, TimestampMixin):
     reviews = relationship("Review", back_populates="job", cascade="all, delete-orphan")
     events = relationship("EventLog", back_populates="job", cascade="all, delete-orphan")
 
-    previous_annotators = relationship(
-        "User",
-        secondary="job_previous_annotators",
-        back_populates="previous_jobs"
-    )
+    # TODO: Fix job_previous_annotators relationship - currently causing SQLAlchemy errors
+    # previous_annotators = relationship(
+    #     "User",
+    #     secondary="job_previous_annotators",
+    #     back_populates="previous_jobs"
+    # )
 
 
 # --------------------------------------------------
@@ -136,8 +137,9 @@ class Role(Base, TimestampMixin):
     description = Column(Text, nullable=True)
 
     # --- Relationships ---
-    users = relationship("User", secondary="user_roles", back_populates="roles")
-    permissions = relationship("Permission", secondary="role_permissions", back_populates="roles")
+    # TODO: Fix association table references - user_roles and role_permissions not accessible
+    # users = relationship("User", secondary="user_roles", back_populates="roles")
+    # permissions = relationship("Permission", secondary="role_permissions", back_populates="roles")
 
 
 # --------------------------------------------------
@@ -152,4 +154,5 @@ class Permission(Base, TimestampMixin):
     description = Column(Text, nullable=True)
 
     # --- Relationships ---
-    roles = relationship("Role", secondary="role_permissions", back_populates="permissions")
+    # TODO: Fix association table references - role_permissions not accessible
+    # roles = relationship("Role", secondary="role_permissions", back_populates="permissions")
