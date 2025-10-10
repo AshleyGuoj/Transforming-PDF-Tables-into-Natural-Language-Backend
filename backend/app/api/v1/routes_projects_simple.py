@@ -155,3 +155,35 @@ async def get_project(
         created_at=str(row[8]),
         updated_at=str(row[9]) if row[9] else None,
     )
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+async def delete_project(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Soft delete a project (sets deleted_at timestamp).
+
+    This will mark the project as deleted. Due to database CASCADE constraints,
+    all related files, file_tables, and annotation_jobs will also be handled.
+    """
+    # First check if project exists
+    check_query = text("""
+        SELECT project_id FROM project
+        WHERE project_id = :project_id AND deleted_at IS NULL
+    """)
+    result = await db.execute(check_query, {"project_id": project_id})
+    if not result.fetchone():
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Soft delete the project
+    delete_query = text("""
+        UPDATE project
+        SET deleted_at = NOW(), is_active = false
+        WHERE project_id = :project_id
+    """)
+    await db.execute(delete_query, {"project_id": project_id})
+    await db.commit()
+
+    return None

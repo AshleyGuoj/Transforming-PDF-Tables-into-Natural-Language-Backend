@@ -10,7 +10,7 @@ Project-related models:
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean,
-    ForeignKey, Enum, JSON, Index, UniqueConstraint, func
+    ForeignKey, Enum, JSON, Index, UniqueConstraint, func, text
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -71,7 +71,13 @@ class Project(Base, TimestampMixin):
 class File(Base, TimestampMixin):
     __tablename__ = "file"
     __table_args__ = (
-        UniqueConstraint("project_id", "name", name="uq_project_file_name"),
+        Index(
+            "uq_project_file_name_active",
+            "project_id",
+            "name",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL")
+        ),
         Index("ix_file_project_id", "project_id"),
         Index("ix_file_status", "status"),
         Index("ix_file_type", "file_type"),

@@ -60,9 +60,14 @@ async def upload_file_to_project(
 
     This endpoint:
     1. Validates the project exists and user has access
-    2. Stores the file in storage (S3/MinIO)
-    3. Creates File and FileVersion records
-    4. Returns file metadata
+    2. Checks if a file with the same name already exists in this project
+    3. Stores the file in storage (S3/MinIO)
+    4. Creates File and FileVersion records
+    5. Returns file metadata
+
+    Note: File names must be unique within a project. If a file with the same name
+    already exists, a 409 Conflict error will be returned. Different projects can
+    have files with the same name.
 
     Args:
         project_id: Project ID to upload file to
@@ -73,6 +78,11 @@ async def upload_file_to_project(
 
     Returns:
         FileUploadResponse with file metadata
+
+    Raises:
+        HTTPException 404: Project not found or access denied
+        HTTPException 409: File with same name already exists in this project
+        HTTPException 413: File size exceeds maximum allowed size
     """
     try:
         logger.info(f"🚀 Upload started - User {current_user.user_id} uploading file to project {project_id}")
@@ -94,7 +104,23 @@ async def upload_file_to_project(
                 detail="Project not found or access denied"
             )
 
-        # 2. Read file content
+        # 2. Check if file with same name already exists in this project
+        existing_file_query = select(FileModel).where(
+            FileModel.project_id == project_id,
+            FileModel.name == file.filename,
+            FileModel.deleted_at.is_(None)
+        )
+        existing_file_result = await db.execute(existing_file_query)
+        existing_file = existing_file_result.scalar_one_or_none()
+
+        if existing_file:
+            logger.warning(f"File with name '{file.filename}' already exists in project {project_id}")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A file with the name '{file.filename}' already exists in this project. Please rename the file or delete the existing one first."
+            )
+
+        # 3. Read file content
         file_content = await file.read()
         file_size = len(file_content)
 
@@ -106,7 +132,7 @@ async def upload_file_to_project(
                 detail=f"File size exceeds maximum allowed size of {max_size / (1024*1024)}MB"
             )
 
-        # 3. Save file to local storage (for development)
+        # 4. Save file to local storage (for development)
         # In production, this should upload to S3/MinIO
         upload_dir = Path(f"uploads/projects/{project_id}/files")
         upload_dir.mkdir(parents=True, exist_ok=True)
@@ -120,7 +146,7 @@ async def upload_file_to_project(
 
         logger.info(f"File saved to {storage_path_str}")
 
-        # 4. Create File record
+        # 5. Create File record
         new_file = FileModel(
             project_id=project_id,
             name=file.filename,  # Fixed: file_name -> name
@@ -131,7 +157,7 @@ async def upload_file_to_project(
         db.add(new_file)
         await db.flush()  # Get file_id
 
-        # 5. Create FileVersion record
+        # 6. Create FileVersion record
         file_version = FileVersion(
             file_id=new_file.file_id,
             version_number=1,
@@ -142,7 +168,7 @@ async def upload_file_to_project(
         db.add(file_version)
         await db.flush()  # Get version_id
 
-        # 6. Set active_version_id on File record
+        # 7. Set active_version_id on File record
         new_file.active_version_id = file_version.version_id
 
         await db.commit()
