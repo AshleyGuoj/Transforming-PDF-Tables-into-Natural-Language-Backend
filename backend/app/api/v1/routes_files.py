@@ -50,10 +50,10 @@ class FileListResponse(BaseModel):
 @router.post("/projects/{project_id}/files", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file_to_project(
     project_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = FastAPIFile(..., description="File to upload"),
     current_user: JWTPayload = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Upload a file to a specific project.

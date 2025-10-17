@@ -54,9 +54,9 @@ class ExportListResponse(BaseModel):
 async def export_project(
     project_id: int,
     request: ExportRequest,
+    background_tasks: BackgroundTasks,
     current_user: JWTPayload = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Export project data in specified format.

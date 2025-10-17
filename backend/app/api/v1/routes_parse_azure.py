@@ -76,9 +76,9 @@ class TablesListResponse(BaseModel):
 @router.post("/files/{file_id}/parse", response_model=ParseResponse)
 async def trigger_file_parse(
     file_id: int,
+    background_tasks: BackgroundTasks,
     current_user: JWTPayload = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Trigger PDF parsing using Azure Document Intelligence API.

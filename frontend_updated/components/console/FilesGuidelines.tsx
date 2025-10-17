@@ -167,6 +167,62 @@ export default function FilesGuidelines() {
     }
   };
 
+  // Handle viewing tables for a specific file
+  const handleViewTables = async (file: any) => {
+    console.log('📊 Viewing tables for file:', file.name);
+    setSelectedFile(file);
+    
+    try {
+      // Get tables data from backend
+      const tablesData = await API.parse.getTables(file.id);
+      console.log('✅ Tables data loaded:', tablesData);
+      
+      // Transform tables data to match component structure
+      const transformedTables = tablesData.tables.map((table: any) => ({
+        id: table.table_id,
+        page: table.page_number,
+        bbox: table.bbox ? [table.bbox.x, table.bbox.y, table.bbox.width, table.bbox.height] : [0, 0, 0, 0],
+        rows: table.rows?.length || 0,
+        cols: table.headers?.[0]?.length || 0,
+        complexity: 'medium', // Default complexity
+        status: 'pending',
+        hasFootnotes: false, // Default value
+        // Add actual table data for display
+        headers: table.headers || [],
+        tableRows: table.rows || [],
+        confidence: table.confidence || 0
+      }));
+      
+      setSelectedFile({
+        ...file,
+        parsedTables: transformedTables
+      });
+    } catch (error) {
+      console.error('❌ Failed to load tables:', error);
+      alert('加载表格数据失败，请检查后端连接');
+    }
+  };
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedFile) {
+        setSelectedFile(null);
+      }
+    };
+
+    if (selectedFile) {
+      document.addEventListener('keydown', handleEscKey);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedFile]);
+
   const mockProjects = [
     {
       id: 1,
@@ -859,7 +915,7 @@ export default function FilesGuidelines() {
                     <td className="py-4 px-4">
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => setSelectedFile(file)}
+                          onClick={() => handleViewTables(file)}
                           className="text-blue-600 hover:text-blue-700 text-sm cursor-pointer"
                         >
                           查看表格
@@ -1092,15 +1148,25 @@ export default function FilesGuidelines() {
 
       {/* File Detail Modal - 显示解析的表格列表 */}
       {selectedFile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-[800px] max-w-90vw max-h-80vh overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedFile(null);
+            }
+          }}
+        >
+          <div className="bg-white rounded-lg p-6 w-[90vw] max-w-[1000px] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">表格解析结果</h3>
               <button
                 onClick={() => setSelectedFile(null)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                className="text-gray-400 hover:text-gray-600 cursor-pointer p-1 rounded-full hover:bg-gray-100"
+                title="关闭"
               >
-                <i className="ri-close-line w-5 h-5 flex items-center justify-center"></i>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
             
@@ -1124,63 +1190,89 @@ export default function FilesGuidelines() {
             {selectedFile.parsedTables && selectedFile.parsedTables.length > 0 && (
               <div>
                 <h4 className="text-md font-semibold text-gray-900 mb-3">解析的表格列表</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">表格ID</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">页码</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">位置(bbox)</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">行/列</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">复杂度</th>
-                        <th className="text-left py-2 px-3 font-medium text-gray-900">状态</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {selectedFile.parsedTables.map((table: any) => (
-                        <tr key={table.id} className="hover:bg-gray-50">
-                          <td className="py-2 px-3">
-                            <span className="font-mono text-blue-600">#{table.id}</span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className="text-gray-900">第 {table.page} 页</span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className="text-xs text-gray-600 font-mono">
-                              [{table.bbox.join(', ')}]
-                            </span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className="text-gray-900">{table.rows}×{table.cols}</span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getComplexityColor(table.complexity)}`}>
-                              {getComplexityLabel(table.complexity)}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(table.status)}`}>
-                              {getStatusLabel(table.status)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-6">
+                  {selectedFile.parsedTables.map((table: any, index: number) => (
+                    <div key={table.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="text-sm font-semibold text-gray-900">
+                          表格 #{table.id} (第 {table.page} 页)
+                        </h5>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500">
+                            {table.rows}×{table.cols} | 置信度: {Math.round((table.confidence || 0) * 100)}%
+                          </span>
+                          <span className={`px-2 py-1 text-xs rounded-full ${getComplexityColor(table.complexity)}`}>
+                            {getComplexityLabel(table.complexity)}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* 显示实际表格内容 */}
+                      {table.headers && table.tableRows && (
+                        <div className="overflow-x-auto border border-gray-200 rounded">
+                          <table className="min-w-full border-collapse">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                {table.headers[0]?.map((header: string, colIndex: number) => (
+                                  <th
+                                    key={colIndex}
+                                    className="border border-gray-200 px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider"
+                                  >
+                                    {header || `列 ${colIndex + 1}`}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {table.tableRows.slice(0, 10).map((row: string[], rowIndex: number) => (
+                                <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  {row.map((cell: string, cellIndex: number) => (
+                                    <td
+                                      key={cellIndex}
+                                      className="border border-gray-200 px-3 py-2 text-sm text-gray-900"
+                                    >
+                                      {cell || '-'}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {table.tableRows.length > 10 && (
+                            <div className="text-xs text-gray-500 px-3 py-2 bg-gray-50 border-t border-gray-200">
+                              显示前 10 行，共 {table.tableRows.length} 行
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* 表格元数据 */}
+                      <div className="mt-3 text-xs text-gray-500">
+                        <span className="font-mono">位置: [{table.bbox.join(', ')}]</span>
+                        <span className="mx-2">|</span>
+                        <span>状态: {getStatusLabel(table.status)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
             
-            <div className="flex items-center justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setSelectedFile(null)}
-                className="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg whitespace-nowrap cursor-pointer"
-              >
-                关闭
-              </button>
-              <button className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap cursor-pointer">
-                查看PDF
-              </button>
+            <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
+              <div className="text-sm text-gray-500">
+                共 {selectedFile.parsedTables?.length || 0} 个表格
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => setSelectedFile(null)}
+                  className="px-6 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg whitespace-nowrap cursor-pointer transition-colors"
+                >
+                  关闭
+                </button>
+                <button className="px-6 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap cursor-pointer transition-colors">
+                  查看PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>

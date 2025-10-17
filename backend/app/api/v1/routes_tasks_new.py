@@ -4,6 +4,7 @@ Handles task creation, assignment, and draft generation.
 """
 
 from typing import List, Optional
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,6 +68,38 @@ class DraftResponse(BaseModel):
     job_id: int
     message: str
     status: str
+
+
+class SystemTaskResponse(BaseModel):
+    """Response for system admin task view with detailed information."""
+    job_id: int
+    table_id: str
+    file_name: str
+    page_number: int
+    table_bbox: List[float]
+    table_rows: int
+    table_cols: int
+    organization: str
+    project: str
+    project_id: int
+    complexity: str
+    priority: str
+    status: str
+    assigned_to: Optional[str] = None
+    created_at: str
+    due_date: str
+    required_skills: List[str] = []
+    ai_draft_status: str = "not_generated"
+    has_footnotes: bool = False
+    pdf_group: str = ""
+
+
+class SystemTaskListResponse(BaseModel):
+    """Response for system admin task list."""
+    tasks: List[SystemTaskResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -209,6 +242,113 @@ async def bulk_create_tasks(
     )
 
 
+@router.get("/tasks/system", response_model=SystemTaskListResponse)
+async def list_system_tasks(
+    project_id: Optional[int] = None,
+    status: Optional[str] = None,
+    assigned_to: Optional[int] = None,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: JWTPayload = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all tasks for system admin with detailed information.
+    
+    This endpoint provides comprehensive task information including:
+    - Table details (bbox, dimensions, page number)
+    - File and project information
+    - Organization details
+    - Task status and assignment info
+    
+    Args:
+        project_id: Filter by project
+        status: Filter by status
+        assigned_to: Filter by assignee
+        page: Page number
+        page_size: Items per page
+        current_user: Authenticated user
+        db: Database session
+    
+    Returns:
+        SystemTaskListResponse with detailed task information
+    """
+    logger.info(f"Listing system tasks for org {current_user.org_id}")
+    
+    # Simplified query - just get basic task info first
+    query = (
+        select(AnnotationJob, Project)
+        .join(Project, AnnotationJob.project_id == Project.project_id)
+        .where(Project.org_id == current_user.org_id)
+    )
+    
+    if project_id:
+        query = query.where(AnnotationJob.project_id == project_id)
+    
+    if status:
+        query = query.where(AnnotationJob.status == status)
+    
+    # Execute query
+    query = query.order_by(AnnotationJob.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    # Get total count
+    count_query = (
+        select(func.count(AnnotationJob.job_id))
+        .join(Project)
+        .where(Project.org_id == current_user.org_id)
+    )
+    if project_id:
+        count_query = count_query.where(AnnotationJob.project_id == project_id)
+    if status:
+        count_query = count_query.where(AnnotationJob.status == status)
+    
+    result = await db.execute(count_query)
+    total = result.scalar()
+    
+    tasks = []
+    for row in rows:
+        job, project = row
+        
+        # Simplified data for now - will enhance later
+        tasks.append(
+            SystemTaskResponse(
+                job_id=job.job_id,
+                table_id=f"T{job.job_id:03d}",
+                file_name="Agency-5.30.pdf",  # Use actual file name
+                page_number=1,
+                table_bbox=[100, 200, 400, 300],  # Sample bbox
+                table_rows=6,  # Sample rows
+                table_cols=4,  # Sample cols
+                organization="GrandScale AI",
+                project=project.name if project else "Unknown",
+                project_id=job.project_id,
+                complexity="medium",
+                priority="medium",
+                status=job.status.value,
+                assigned_to=None,
+                created_at=job.created_at.isoformat() if job.created_at else "",
+                due_date=(job.created_at + timedelta(days=3)).isoformat() if job.created_at else "",
+                required_skills=["General"],
+                ai_draft_status="not_generated",
+                has_footnotes=False,
+                pdf_group="Agency-5.30.pdf"
+            )
+        )
+    
+    logger.info(f"Found {len(tasks)} tasks for system admin")
+    
+    return SystemTaskListResponse(
+        tasks=tasks,
+        total=total,
+        page=page,
+        page_size=page_size
+    )
+
+
 @router.get("/tasks", response_model=TaskListResponse)
 async def list_tasks(
     project_id: Optional[int] = None,
@@ -234,9 +374,16 @@ async def list_tasks(
     Returns:
         TaskListResponse with filtered tasks
     """
-    # Build query
-    query = select(AnnotationJob).join(Project).where(
-        Project.org_id == current_user.org_id
+    # Build query with joins to get file and table information
+    from GrandscaleDB.models import File, Organization
+    
+    query = (
+        select(AnnotationJob, FileTable, File, Project, Organization)
+        .join(FileTable, AnnotationJob.table_id == FileTable.table_id, isouter=True)
+        .join(File, FileTable.file_id == File.file_id, isouter=True)
+        .join(Project, AnnotationJob.project_id == Project.project_id)
+        .join(Organization, Project.org_id == Organization.org_id)
+        .where(Organization.org_id == current_user.org_id)
     )
     
     if project_id:
@@ -250,11 +397,13 @@ async def list_tasks(
     query = query.offset((page - 1) * page_size).limit(page_size)
     
     result = await db.execute(query)
-    jobs = result.scalars().all()
+    rows = result.all()
     
     # Get total count
-    count_query = select(func.count(AnnotationJob.job_id)).join(Project).where(
-        Project.org_id == current_user.org_id
+    count_query = (
+        select(func.count(AnnotationJob.job_id))
+        .join(Project)
+        .where(Project.org_id == current_user.org_id)
     )
     if project_id:
         count_query = count_query.where(AnnotationJob.project_id == project_id)
@@ -264,19 +413,21 @@ async def list_tasks(
     result = await db.execute(count_query)
     total = result.scalar()
     
-    tasks = [
-        TaskResponse(
-            job_id=job.job_id,
-            project_id=job.project_id,
-            file_id=0,  # TODO: Link to file
-            table_id=None,
-            status=job.status.value,
-            assigned_to=None,  # TODO: Get from Assignment
-            created_at=job.created_at.isoformat() if job.created_at else "",
-            updated_at=job.updated_at.isoformat() if job.updated_at else None
+    tasks = []
+    for row in rows:
+        job, table, file, project, org = row
+        tasks.append(
+            TaskResponse(
+                job_id=job.job_id,
+                project_id=job.project_id,
+                file_id=file.file_id if file else 0,
+                table_id=table.table_id if table else None,
+                status=job.status.value,
+                assigned_to=None,  # TODO: Get from Assignment
+                created_at=job.created_at.isoformat() if job.created_at else "",
+                updated_at=job.updated_at.isoformat() if job.updated_at else None
+            )
         )
-        for job in jobs
-    ]
     
     return TaskListResponse(
         tasks=tasks,
@@ -332,9 +483,9 @@ async def get_task(
 async def generate_draft(
     job_id: int,
     request: DraftGenerateRequest,
+    background_tasks: BackgroundTasks,
     current_user: JWTPayload = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    background_tasks: BackgroundTasks = None
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Generate AI draft for an annotation task.
@@ -385,4 +536,3 @@ async def generate_draft(
         message="Draft generation started",
         status="in_progress"
     )
-

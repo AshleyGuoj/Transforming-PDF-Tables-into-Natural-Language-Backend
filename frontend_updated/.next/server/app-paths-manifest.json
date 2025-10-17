@@ -1,7 +1,5 @@
 {
+  "/_not-found/page": "app/_not-found/page.js",
   "/console/project/page": "app/console/project/page.js",
-  "/login/page": "app/login/page.js",
-  "/console/org/page": "app/console/org/page.js",
-  "/export/page": "app/export/page.js",
-  "/qa/page": "app/qa/page.js"
+  "/console/system/page": "app/console/system/page.js"
 }
